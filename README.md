@@ -12,3 +12,9 @@ A party-host app for white elephant gift exchanges. Run it on one screen (laptop
 - Undo, a play-by-play log, a host "peek" toggle, and JSON export/import.
 
 All data is stored in your browser's localStorage. Nothing gets uploaded anywhere.
+
+## Deploying
+- **Front end:** GitHub Pages serves `main`. Every push redeploys it.
+- **Database:** The Supabase GitHub integration applies new files in `supabase/migrations/` on every push to `main`.
+  To change the schema, add a new file named `supabase/migrations/<YYYYMMDDHHMMSS>_<name>.sql`. Never edit a migration that has already been applied.
+- **Connection:** `config.js` holds the Supabase project URL and the publishable key. That key is public on purpose; access is enforced by row-level security and the database functions.

@@ -1,0 +1,3 @@
+# Supabase CLI / GitHub integration config. Migrations in supabase/migrations deploy on push to main.
+project_id = "white-elephant"
+

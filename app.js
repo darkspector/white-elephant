@@ -179,6 +179,7 @@ function confetti() {
 function parseRoute() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
   if (h[0] === 'g' && h[1]) return { view: 'group', code: h[1].toLowerCase(), hostKey: h[2] === 'host' ? h[3] : null, rejoin: h[2] === 'rejoin' ? h[3] : null };
+  if (h[0] === 'help') return { view: 'help' };
   return { view: 'home' };
 }
 let routeSeq = 0;
@@ -186,6 +187,7 @@ async function route() {
   leaveGroup();
   const seq = ++routeSeq;
   const r = parseRoute();
+  if (r.view === 'help') { renderHelp(); window.scrollTo(0, 0); return; }
   if (r.view === 'home') {
     renderHome();
     try { siteInfo = await rpc('site_info'); if (parseRoute().view === 'home') renderHome(); } catch { }
@@ -326,6 +328,122 @@ function renderMessage(title, body) {
   paint(`<div class="home"><section class="panel hero"><h2>${esc(title)}</h2><p>${esc(body)}</p><a class="btn" href="#/">← Home</a></section></div>`);
 }
 
+/* ---- help ---- */
+function renderHelp() {
+  setSteps(null); document.body.classList.remove('big');
+  document.title = 'How it works — White Elephant';
+  const shot = (f, cap) => `<figure class="shot"><a href="help/${f}.webp" target="_blank" rel="noopener"><img src="help/${f}.webp" alt="${cap}" loading="lazy"></a><figcaption>${cap}</figcaption></figure>`;
+  paint(`<div class="help">
+    <section class="panel hero">
+      <h2>${ELEPHANT} How it works</h2>
+      <p>A White Elephant gift exchange you play together over a Discord call. Everyone opens the same group in their own browser and the screens stay in sync.</p>
+      <ol class="flow">
+        <li><b>Set up.</b> The host creates a group and shares the invite link.</li>
+        <li><b>Add gifts.</b> Each player joins, adds one gift and designs its wrapping.</li>
+        <li><b>Play.</b> On your turn, pick a wrapped present from the pile or steal one someone already has.</li>
+        <li><b>Reveal.</b> When every present has an owner, they are unwrapped one by one.</li>
+      </ol>
+      <p class="muted">Nobody, not even the host, can see what is inside someone else's present until it is unwrapped.</p>
+      <p class="row"><button class="btn small" data-action="help-jump" data-id="help-host">👑 I'm hosting</button><button class="btn small" data-action="help-jump" data-id="help-player">🎁 I'm playing</button><button class="btn small" data-action="help-jump" data-id="help-faq">💡 Good to know</button></p>
+    </section>
+
+    <section class="panel" id="help-host">
+      <h2>👑 If you are the host</h2>
+      <h3>1. Create the group</h3>
+      <ul>
+        <li>On the home page, enter a group name. Add your own name if you are also playing, or leave it blank to host only.</li>
+        <li>A group password is optional. If you set one, friends need it to join.</li>
+        <li>The site holds a limited number of groups, and every group is deleted automatically 8 weeks after it is created.</li>
+      </ul>
+      <h3>2. Get everyone into the lobby</h3>
+      ${shot('host-lobby', 'The host lobby: invite link, players, your gift and the host controls')}
+      <ul>
+        <li><b>Invite link.</b> Copy it, or use "Copy invite message for Discord", which writes the invitation for you.</li>
+        <li><b>Your host link.</b> Under "👑 Your host link (keep secret)". Save it somewhere private. It makes any browser the host, so it is how you get back in from another device. Don't share it.</li>
+        <li><b>Players list.</b> 🎁 means a gift is added, ⏳ means still waiting. Use ✕ to remove someone, and 🔄 to make a personal rejoin link for a player who switched device.</li>
+        <li><b>Add a gift for someone</b> who can't add their own. You can see the contents of gifts you entered yourself.</li>
+        <li><b>Event date.</b> Set it and press Save. Everyone sees it in their own time zone.</li>
+      </ul>
+      <h3>3. Choose the rules</h3>
+      <ul>
+        <li><b>Signups open.</b> Turn it off to stop new people joining.</li>
+        <li><b>Max steals per gift.</b> After that many steals a present is locked 🔒 to its holder.</li>
+        <li><b>No immediate steal-backs.</b> A player who was just robbed can't take the same present straight back.</li>
+        <li><b>First player gets a final swap.</b> Whoever went first gets one last swap at the end, since they had nothing to steal on their turn.</li>
+        <li><b>Players can't pick or steal the gift they brought,</b> unless it is the last one left.</li>
+      </ul>
+      <p>"Start the game" stays disabled, with the reason shown next to it, until the group is ready. Starting puts the players in a random order.</p>
+      <h3>4. Run the game</h3>
+      ${shot('host-play', 'The host view during play, with the gift tracker and the host panel')}
+      <ul>
+        <li>The banner shows whose turn it is. You can click for any player, which helps if someone is away or having trouble.</li>
+        <li><b>Undo</b> takes back the last move. <b>Skip to reveal</b> ends play early. <b>Back to lobby</b> resets the game and keeps the players and gifts.</li>
+        <li><b>📺 Big screen</b> enlarges the board for sharing your screen on Discord.</li>
+        <li>The <b>gift tracker</b> shows every hand each present has passed through.</li>
+      </ul>
+      <h3>5. The reveal and afterwards</h3>
+      ${shot('host-results', 'The results after everything is unwrapped')}
+      <ul>
+        <li>Press "Unwrap next" to go in order, or tap any present. Players can also unwrap their own.</li>
+        <li>When everything is open, "Copy results for Discord" gives you a list of who got what.</li>
+        <li>"Play again" returns to the lobby. "End group now" deletes the group for everyone and frees its slot. It can't be undone.</li>
+      </ul>
+    </section>
+
+    <section class="panel" id="help-player">
+      <h2>🎁 If you are a player</h2>
+      <h3>1. Join</h3>
+      <ul>
+        <li>Open the invite link from your host, type your name, and enter the group password if there is one.</li>
+        <li>There is no account. The site remembers you by the browser you joined with, so <b>keep using the same browser on the same device</b>. A private window or another device looks like a new person.</li>
+      </ul>
+      <h3>2. Add your gift</h3>
+      ${shot('player-lobby', 'A player in the lobby: your own gift is visible, the others are only wrapping')}
+      <ul>
+        <li>Press "+ Add my gift". Give it a name, an optional note, and a picture (upload one or paste an image link).</li>
+        <li>Design the wrapping: paper colour, pattern, ribbon, bow, a topper and a tag.</li>
+        <li>Everyone sees your wrapping. Only you see what is inside. You can edit or delete it until the game starts.</li>
+        <li>Then wait in the lobby. The game starts when the host presses start.</li>
+      </ul>
+      <h3>3. Your turn</h3>
+      ${shot('player-play', 'A player during the game: the pile, the claimed presents and the turn order')}
+      <ul>
+        <li>When it is your turn the banner says "You're up!", the tab title changes and a short sound plays.</li>
+        <li><b>Pick</b> a present from "Under the tree", or <b>steal</b> one from "Claimed". Presents stay wrapped the whole game, so you are choosing by the wrapping.</li>
+        <li>If someone steals yours, you go again straight away: pick from the pile or steal a different one.</li>
+        <li>A present you can't take is greyed out with the reason, such as locked 🔒 after too many steals, or it is the one you brought.</li>
+        <li>If the host allows it, the first player gets a final swap at the end.</li>
+        <li>When it is not your turn there is nothing to do but watch. Your screen updates by itself.</li>
+      </ul>
+      <h3>4. The reveal</h3>
+      ${shot('player-reveal', 'A present being unwrapped, as every player sees it')}
+      <ul>
+        <li>Tap your present to unwrap it, or the host unwraps for you. Everyone sees the animation at the same moment.</li>
+        <li>At the end you can see who got what and who brought it, and copy the results.</li>
+      </ul>
+    </section>
+
+    <section class="panel" id="help-faq">
+      <h2>💡 Good to know</h2>
+      <dl class="faq">
+        <dt>I closed the tab or my computer restarted.</dt>
+        <dd>Nothing is lost. Open the invite link again in the same browser and you are back where you were. The game is stored online, not on anyone's computer.</dd>
+        <dt>I'm a player and I switched device or browser, or cleared my browser data.</dt>
+        <dd>Ask the host for a personal rejoin link (the 🔄 next to your name). It works once and puts you back in your seat with your gift.</dd>
+        <dt>I'm the host and I switched device.</dt>
+        <dd>Open your host link on the new device. If you didn't save it, open the group on the original browser and copy it from the lobby. Without either, nobody can host that group.</dd>
+        <dt>My screen looks stuck.</dt>
+        <dd>Screens normally update within a second or two, and at worst within about 8 seconds. Refreshing the page is always safe.</dd>
+        <dt>Can other people see my gift?</dt>
+        <dd>They see the wrapping only. The name, note and photo stay hidden from everyone else until it is unwrapped. If the host entered a gift for you, the host can see that one.</dd>
+        <dt>How long does a group last?</dt>
+        <dd>8 weeks from the day it was created, or until the host ends it. The lobby shows both dates. After that the group, its gifts and its results are deleted.</dd>
+      </dl>
+      <p><a class="btn" href="#/">← Home</a></p>
+    </section>
+  </div>`);
+}
+
 function renderHome() {
   setSteps(null); document.body.classList.remove('big');
   const list = myGroups.list();
@@ -345,7 +463,7 @@ function renderHome() {
     ${list.length ? `<section class="panel"><h2>Your groups</h2><ul class="group-list">${list.map(g => `
       <li><a href="#/g/${esc(g.code)}">${esc(g.name || g.code)}</a>${g.host ? ' <span class="badge">host</span>' : ''}
       <button class="icon-btn" data-action="forget-group" data-id="${esc(g.id)}" title="Remove from this list">✕</button></li>`).join('')}</ul></section>` : ''}
-    <p class="center hint">Got an invite link? Just open it.</p>
+    <p class="center hint">Got an invite link? Just open it. · <a href="#/help">How it works</a></p>
   </div>`);
 }
 
@@ -449,9 +567,9 @@ function myGiftPanel(x) {
     <div class="empty">You haven't added your gift yet.<br><br><button class="btn primary big" data-action="add-gift" data-for="${S.me}">+ Add my gift</button></div></section>`;
   const c = contents[x.id] || {};
   return `<section class="panel your-gift"><h2>🎁 Your gift</h2>
-    <div class="my-gift">
+    <div class="my-gift${safeImg(c.img) ? '' : ' no-photo'}">
       <div class="my-wrap">${presentSVG(x.wrap)}</div>
-      <div class="my-inside">${itemImg(c)}</div>
+      ${safeImg(c.img) ? `<div class="my-inside">${itemImg(c)}</div>` : ''}
       <div class="my-info"><b>${esc(c.name || '')}</b>${c.note ? `<p>${esc(c.note)}</p>` : ''}
         <p class="muted">Everyone sees the wrapping. Only you can see what's inside until the reveal.</p>
         <div class="row"><button class="btn small" data-action="edit-gift" data-id="${x.id}">Edit</button>
@@ -669,6 +787,7 @@ function closeModal() { $modal.classList.remove('show'); $modal.innerHTML = ''; 
 
 /* ---------------- events ---------------- */
 const actions = {
+  'help-jump'(d) { document.getElementById(d.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
   'forget-group': d => { myGroups.remove(d.id); renderHome(); },
   'copy': d => navigator.clipboard.writeText(d.text).then(() => toast('Copied! 📋'), () => toast('Copy failed — select the text and copy it manually', true)),
   'remove-player': d => {

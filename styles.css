@@ -307,3 +307,19 @@ body.big .trk-chain .chip { font-size: 1.05rem; }
 /* Santa hat on the elephant */
 .ele { position: relative; display: inline-block; }
 .santa-hat { position: absolute; width: .66em; left: -.02em; top: -.04em; transform: rotate(-14deg); pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
+
+.my-gift.no-photo { grid-template-columns: 130px 1fr; }
+@media (max-width: 600px) { .my-gift.no-photo { grid-template-columns: 1fr; } }
+
+/* Help page */
+.help-link { margin-left: auto; color: #fff; text-decoration: none; font-weight: 600; font-size: .95rem; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.14); white-space: nowrap; }
+.help-link:hover { background: rgba(255,255,255,.26); }
+.help { max-width: 860px; margin: 0 auto; }
+.help h3 { margin-top: 22px; }
+.help ul, .help ol { margin: 8px 0; padding-left: 22px; }
+.help li { margin: 6px 0; line-height: 1.5; }
+.help .shot { margin: 12px 0 14px; }
+.help .shot img { width: 100%; display: block; border-radius: 12px; border: 1px solid rgba(0,0,0,.15); box-shadow: 0 6px 18px rgba(0,0,0,.15); }
+.help .shot figcaption { font-size: .85rem; color: var(--muted); margin-top: 6px; text-align: center; }
+.help .faq dt { font-weight: 700; margin-top: 14px; }
+.help .faq dd { margin: 4px 0 0; line-height: 1.5; }

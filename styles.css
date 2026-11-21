@@ -323,3 +323,8 @@ body.big .trk-chain .chip { font-size: 1.05rem; }
 .help .shot figcaption { font-size: .85rem; color: var(--muted); margin-top: 6px; text-align: center; }
 .help .faq dt { font-weight: 700; margin-top: 14px; }
 .help .faq dd { margin: 4px 0 0; line-height: 1.5; }
+
+/* Host view marker */
+body.is-host { border-top: 6px solid var(--gold); }
+.rolebar { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; align-items: center; margin: 0 auto 14px; padding: 8px 18px; width: fit-content; max-width: calc(100% - 40px); border-radius: 999px; background: var(--gold); color: #3a2c00; font-size: .92rem; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.rolebar b { letter-spacing: .06em; }

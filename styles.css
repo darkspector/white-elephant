@@ -223,3 +223,5 @@ button.gift-card:hover:not(:disabled) .cta { opacity: 1; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.bad { background: var(--red); }
+
+[hidden] { display: none !important; }

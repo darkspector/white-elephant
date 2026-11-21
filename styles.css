@@ -270,8 +270,9 @@ select { width: 100%; padding: 9px 11px; border: 1px solid #d9cbb2; border-radiu
 
 /* big-screen mode for Discord screen sharing */
 body.big main { max-width: 1600px; }
-body.big .play { grid-template-columns: 1fr; }
-body.big .play aside { display: none; }
+body.big .play { grid-template-columns: 1fr 340px; }
+@media (max-width: 900px) { body.big .play { grid-template-columns: 1fr; } }
+body.big .play aside { font-size: 1.08rem; }
 body.big .gift-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 body.big .gift-card .owner { font-size: 1.2rem; }
 body.big .banner .who { font-size: 3rem; }

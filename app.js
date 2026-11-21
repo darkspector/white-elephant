@@ -384,7 +384,7 @@ function renderHelp() {
       <ul>
         <li>The banner shows whose turn it is. You can click for any player, which helps if someone is away or having trouble. When it is not your own turn, a gold notice and the button labels ("Pick for Alice") make clear you are acting for someone else.</li>
         <li><b>Undo</b> takes back the last move. <b>Skip to reveal</b> ends play early. <b>Back to lobby</b> resets the game and keeps the players and gifts.</li>
-        <li><b>📺 Big screen</b> enlarges the board for sharing your screen on Discord.</li>
+        <li><b>📺 Big screen</b> enlarges the board for sharing your screen on Discord. The turn order, host buttons and play-by-play stay visible beside it.</li>
         <li>The <b>gift tracker</b> shows every hand each present has passed through.</li>
       </ul>
       <h3>5. The reveal and afterwards</h3>
@@ -425,7 +425,7 @@ function renderHelp() {
       <h3>4. The reveal</h3>
       ${shot('player-reveal', 'A present being unwrapped, as every player sees it')}
       <ul>
-        <li>Usually the host unwraps everything one present at a time. You watch each one open and wait for the host to move on to the next.</li>
+        <li>Usually the host unwraps everything one present at a time. You watch each one open, the pop-up closes by itself after a few seconds, and the next one appears when the host moves on.</li>
         <li>If the host leaves it to the players instead, tap your own present to unwrap it. Either way everyone sees the animation at the same moment.</li>
         <li>At the end you can see who got what and who brought it, and copy the results.</li>
       </ul>
@@ -719,6 +719,7 @@ function renderReveal() {
   }).join('')}</div>
   ${trackerPanel()}`);
 }
+let revealCloseTimer = null;
 function revealModalFooter(gid) {
   const st = S.group.game, rev = st.revealed || [];
   const next = revealList().find(x => x.gid !== gid && !rev.includes(x.gid));
@@ -726,7 +727,7 @@ function revealModalFooter(gid) {
   if (!next) return '<button class="btn primary next-btn" data-action="close-modal">That’s all of them! 🎉</button>';
   if (S.group.is_host) return `<div class="next-btn"><button class="btn primary big" data-action="reveal" data-id="${next.gid}">Next present ▶${next.pid ? ` — ${esc(player(next.pid).name)}` : ''}</button>
     <div class="wait-note">Everyone is waiting for you to press Next.</div></div>`;
-  return '<div class="next-btn wait-note">⏳ Waiting for the host to unwrap the next present… <button class="btn small" data-action="close-modal">Close</button></div>';
+  return '<div class="next-btn wait-note">⏳ The host will unwrap the next present soon. This closes by itself. <button class="btn small" data-action="close-modal">Close now</button></div>';
 }
 function showRevealModal(gid) {
   const gf = giftById(gid), c = contents[gid];
@@ -745,6 +746,8 @@ function showRevealModal(gid) {
   const stage = document.getElementById('stage');
   setTimeout(() => stage.classList.add('shake'), 80);
   setTimeout(() => { stage.classList.add('open'); confetti(); }, 950);
+  clearTimeout(revealCloseTimer);   // players: the window closes by itself; the host keeps it (it holds the Next button)
+  if (!S.group.is_host) revealCloseTimer = setTimeout(() => { if (document.getElementById('stage') === stage) closeModal(); }, 8000);
 }
 
 /* ---------------- gift editor ---------------- */

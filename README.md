@@ -18,7 +18,7 @@ An online white elephant gift exchange, built for remote groups (e.g. over Disco
 
 ## How it works
 - **Create a group.** The host creates a group, optionally with a **group password**, and shares the invite link. The host also gets a private host link for managing the group from any device.
-- **Limits.** At most **5 groups** exist at a time, and each group is **deleted automatically 8 weeks after it was created**. The lobby shows the start and end dates, plus the **event date** the host sets.
+- **Limits.** At most **25 groups** exist at a time, and each group is **deleted automatically 8 weeks after it was created**. The lobby shows the start and end dates, plus the **event date** the host sets.
 - **Join and add a gift.** Players open the link, enter a name (and the group password if there is one); no account is needed. Each player adds their own gift:
   - the item name and an optional description
   - a photo, either uploaded (resized automatically) or pasted as an image URL

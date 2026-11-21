@@ -18,11 +18,15 @@ let S = null;           // state from get_state()
 let groupId = null;
 let channel = null, pollTimer = null, refreshTimer = null;
 let lastSeq = null;     // last game event we've shown
+let lastPaintKey = '';  // skip repaints when nothing changed
 let draft = null;       // gift being edited
 let busy = false;
 let hostKey = null;     // fetched lazily for the host-link box
 const contents = {};    // gift id -> {name, note, img, from} (only ones we're allowed to see)
 let bigScreen = localStorage.getItem('we.big') === '1';
+let siteInfo = null;       // {groups, max, weeks}
+let joinPw = null;         // group password (host only)
+let lastActive = null;     // for the "your turn" alert
 
 /* ---------------- small helpers ---------------- */
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -42,7 +46,7 @@ async function rpc(fn, args = {}) {
 /** run a server action once, then refresh */
 async function act(fn) {
   if (busy) return; busy = true;
-  try { await fn(); await refresh(); } catch (e) { fail(e); } finally { busy = false; }
+  try { await fn(); await refresh(true); } catch (e) { fail(e); } finally { busy = false; }
 }
 const myGroups = {
   list() { try { return JSON.parse(localStorage.getItem('we.groups')) || []; } catch { return []; } },
@@ -54,6 +58,18 @@ function randomWrap(tag = '') {
   const paper = pickR(PALETTE), others = PALETTE.filter(c => c !== paper);
   return { paper, pattern: pickR(PATTERNS)[0], patternColor: pickR(others), ribbon: pickR(others),
     bow: pickR(['classic', 'pompom', 'star']), topper: '', tag };
+}
+function fmtDate(iso, withTime) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return withTime
+    ? d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
 }
 const player = id => (S && S.players.find(p => p.id === id)) || { name: '?' };
 const giftById = id => S && S.gifts.find(g => g.id === id);
@@ -88,8 +104,20 @@ function bowSVG(kind, c) {
   }
   return '';
 }
-function presentSVG(w) {
+const HEX = /^#[0-9a-fA-F]{6}$/;
+/** never trust wrapping data from the server: only known-safe values reach the markup */
+function cleanWrap(w) {
   w = w || {};
+  const col = (v, d) => (HEX.test(v) ? v : d);
+  return {
+    paper: col(w.paper, '#c0392b'), patternColor: col(w.patternColor, '#ecf0f1'), ribbon: col(w.ribbon, '#f1c40f'),
+    pattern: PATTERNS.some(p => p[0] === w.pattern) ? w.pattern : 'plain',
+    bow: BOWS.some(b => b[0] === w.bow) ? w.bow : 'classic',
+    topper: String(w.topper || '').slice(0, 8), tag: String(w.tag || '').slice(0, 10),
+  };
+}
+function presentSVG(w) {
+  w = cleanWrap(w);
   const id = 'p' + uid();
   const fill = w.pattern && w.pattern !== 'plain' ? `url(#${id}-pat)` : w.paper;
   const topperY = w.bow === 'none' ? 58 : (w.bow === 'classic' ? 36 : 26);
@@ -119,8 +147,9 @@ function presentSVG(w) {
     <text x="35" y="17.5" text-anchor="middle" font-size="${tag.length > 6 ? 9 : 12}" font-weight="700" fill="#4a3b2a" font-family="system-ui,sans-serif">${esc(tag)}</text></g>` : ''}
 </svg>`;
 }
+const safeImg = u => /^(https?:\/\/|data:image\/(jpeg|png|gif|webp);base64,)/i.test(u || '');
 function itemImg(c) {
-  return c && c.img
+  return c && safeImg(c.img)
     ? `<img src="${esc(c.img)}" alt="${esc(c.name)}" onerror="this.outerHTML='<div class=&quot;no-img&quot;>🖼️</div>'">`
     : `<div class="no-img">🎁</div>`;
 }
@@ -148,31 +177,44 @@ function confetti() {
 /* ---------------- routing & sync ---------------- */
 function parseRoute() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
-  if (h[0] === 'g' && h[1]) return { view: 'group', code: h[1].toLowerCase(), hostKey: h[2] === 'host' ? h[3] : null };
+  if (h[0] === 'g' && h[1]) return { view: 'group', code: h[1].toLowerCase(), hostKey: h[2] === 'host' ? h[3] : null, rejoin: h[2] === 'rejoin' ? h[3] : null };
   return { view: 'home' };
 }
+let routeSeq = 0;
 async function route() {
   leaveGroup();
+  const seq = ++routeSeq;
   const r = parseRoute();
-  if (r.view === 'home') return renderHome();
+  if (r.view === 'home') {
+    renderHome();
+    try { siteInfo = await rpc('site_info'); if (parseRoute().view === 'home') renderHome(); } catch { }
+    return;
+  }
   paint('<div class="loading">Loading…</div>');
   if (r.hostKey) {
     try { const id = await rpc('claim_host', { p_code: r.code, p_key: r.hostKey }); myGroups.add({ id, code: r.code, host: true }); toast('You are the host of this group 👑'); }
     catch (e) { fail(e); }
     history.replaceState(null, '', `#/g/${r.code}`);
   }
-  openGroup(r.code);
+  if (r.rejoin) {
+    try { await rpc('rejoin', { p_code: r.code, p_token: r.rejoin }); toast('Welcome back! You’re reconnected 🎉'); }
+    catch (e) { fail(e); }
+    history.replaceState(null, '', `#/g/${r.code}`);
+  }
+  if (seq !== routeSeq) return;
+  openGroup(r.code, seq);
 }
-async function openGroup(code) {
+async function openGroup(code, seq) {
   let info;
   try { info = await rpc('group_info', { p_code: code }); } catch (e) { return renderMessage('Something went wrong', e.message); }
+  if (seq !== routeSeq) return;   // the user navigated elsewhere while this was loading
   if (!info) return renderMessage('Invite not found', "That link doesn't match any group. Double-check you copied the whole thing.");
   if (!info.member) return renderJoin(info);
   groupId = info.id;
   subscribe();
   await refresh();
 }
-async function refresh() {
+async function refresh(force) {
   if (!groupId) return;
   const gidAtStart = groupId;
   let next;
@@ -183,22 +225,32 @@ async function refresh() {
     return;
   }
   if (gidAtStart !== groupId) return;
+  const paintKey = JSON.stringify(next);
+  const changed = paintKey !== lastPaintKey;
+  lastPaintKey = paintKey;
+  if (next.group.phase === 'lobby') for (const x of next.gifts) if (!x.mine) delete contents[x.id];  // no stale reveals after "play again"
   S = next;
+  if (S.group.is_host && hostKey === null) {
+    try { const sec = await rpc('host_secrets', { p_group: groupId }); hostKey = sec.host_key; joinPw = sec.join_password || ''; } catch { }
+  }
   myGroups.add({ id: S.group.id, code: S.group.code, name: S.group.name, host: S.group.is_host });
   await ensureContents();
-  render();
+  if (changed || force) render();
   handleEvent(S.group.game && S.group.game.event);
 }
 function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); }
 function subscribe() {
+  if (channel) sb.removeChannel(channel);
+  clearInterval(pollTimer);
   channel = sb.channel('group-' + groupId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'groups', filter: `id=eq.${groupId}` }, scheduleRefresh)
     .subscribe(status => { if (status === 'SUBSCRIBED') scheduleRefresh(); });
-  pollTimer = setInterval(refresh, 20000); // safety net if realtime drops
+  pollTimer = setInterval(refresh, 8000); // safety net if realtime drops
 }
 function leaveGroup() {
   if (channel) sb.removeChannel(channel);
-  channel = null; clearInterval(pollTimer); groupId = null; S = null; lastSeq = null; hostKey = null;
+  channel = null; clearInterval(pollTimer); groupId = null; S = null; lastSeq = null; lastPaintKey = ''; hostKey = null; joinPw = null; lastActive = null;
+  document.title = 'White Elephant 🐘';
   closeModal();
 }
 async function ensureContents() {
@@ -221,7 +273,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 function paint(html) {
   const keep = {}; let focus = null;
   $app.querySelectorAll('[data-keep]').forEach(el => { keep[el.name] = el.value; if (el === document.activeElement) focus = el.name; });
+  const openDetails = [...$app.querySelectorAll('details[open]')].map(d => d.className);
   $app.innerHTML = html;
+  openDetails.forEach(c => { const d = c && $app.querySelector(`details.${c.split(' ')[0]}`); if (d) d.open = true; });
   for (const [k, v] of Object.entries(keep)) { const el = $app.querySelector(`[data-keep][name="${k}"]`); if (el) el.value = v; }
   if (focus) $app.querySelector(`[data-keep][name="${focus}"]`)?.focus();
 }
@@ -232,8 +286,29 @@ function setSteps(phase) {
       (phase !== 'lobby' ? `<button class="screen-btn" data-action="toggle-big" title="Bigger board for screen sharing">📺 ${bigScreen ? 'Normal view' : 'Big screen'}</button>` : '')
     : '';
 }
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [660, 880].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.start(t); o.stop(t + 0.17);
+    });
+    setTimeout(() => ctx.close(), 800);
+  } catch { }
+}
+function turnAlert() {
+  const g = S.group, active = (g.phase === 'play' || g.phase === 'final') && g.game ? g.game.active : null;
+  const mine = !!active && active === S.me;
+  document.title = mine ? '🎯 YOUR TURN — White Elephant' : 'White Elephant 🐘';
+  if (mine && lastActive !== active) { beep(); if (document.hidden) toast('🎯 It’s your turn!'); }
+  lastActive = active;
+}
 function render() {
   if (!S) return;
+  turnAlert();
   const p = S.group.phase;
   setSteps(p);
   document.body.classList.toggle('big', bigScreen && p !== 'lobby');
@@ -257,7 +332,9 @@ function renderHome() {
       <form data-form="create">
         <label>Group name<input name="gname" data-keep maxlength="60" required placeholder="e.g. Discord Holiday Swap"></label>
         <label>Your name <span class="muted">(leave blank if you're only hosting, not playing)</span><input name="hname" data-keep maxlength="40" placeholder="Your display name"></label>
-        <button class="btn primary big">Create group</button>
+        <label>Group password <span class="muted">(optional — friends will need it to join)</span><input name="pw" data-keep minlength="4" maxlength="40" autocomplete="off" placeholder="e.g. eggnog"></label>
+        <button class="btn primary big" ${siteInfo && siteInfo.groups >= siteInfo.max ? 'disabled' : ''}>Create group</button>
+        ${siteInfo ? `<p class="muted">${siteInfo.groups} of ${siteInfo.max} group slots in use · every group is deleted automatically ${siteInfo.weeks} weeks after it is created${siteInfo.groups >= siteInfo.max ? '<br><b>All slots are full right now.</b> One frees up when a host deletes their group or it expires.' : ''}</p>` : ''}
       </form>
     </section>
     ${list.length ? `<section class="panel"><h2>Your groups</h2><ul class="group-list">${list.map(g => `
@@ -272,11 +349,13 @@ function renderJoin(info) {
   const closed = info.phase !== 'lobby' || !info.signups_open;
   paint(`<div class="home"><section class="panel hero">
     <h2>🐘 You're invited to <span class="hl">${esc(info.name)}</span></h2>
+    ${info.event_at ? `<p>📅 <b>${esc(fmtDate(info.event_at, true))}</b></p>` : ''}
     ${closed ? `<p class="warn-box">${info.phase !== 'lobby' ? 'This game has already started.' : 'Signups are closed.'}
       If the host already added you, enter the exact same name to claim your spot.</p>`
       : '<p class="muted">Use the name people know you by on Discord. Next you’ll add your gift.</p>'}
     <form data-form="join" data-code="${esc(info.code)}">
       <label>Your name<input name="name" data-keep maxlength="40" required autocomplete="nickname"></label>
+      ${info.needs_password ? '<label>🔑 Group password <span class="muted">(ask the host)</span><input name="pw" data-keep maxlength="40" required autocomplete="off"></label>' : ''}
       <button class="btn primary big">Join the group</button>
     </form>
   </section></div>`);
@@ -296,27 +375,33 @@ function renderLobby() {
 
   paint(`
   <div class="banner"><p class="who">${esc(g.name)}</p>
-    <div class="sub">${players.length} player${players.length === 1 ? '' : 's'} · ${gifts.length} gift${gifts.length === 1 ? '' : 's'} · signups ${g.signups_open ? 'open ✅' : 'closed 🔒'}</div></div>
+    <div class="sub">${players.length} player${players.length === 1 ? '' : 's'} · ${gifts.length} gift${gifts.length === 1 ? '' : 's'} · signups ${g.signups_open ? 'open ✅' : 'closed 🔒'}</div>
+    <div class="dates">${g.event_at ? `<span class="evt">📅 Event: <b>${esc(fmtDate(g.event_at, true))}</b></span>` : `<span class="evt muted-light">📅 No event date set${host ? ' yet (set it under Host controls)' : ''}</span>`}
+      <span>Started ${esc(fmtDate(g.created_at))}</span><span>Ends ${esc(fmtDate(g.expires_at))} (${Math.max(0, Math.ceil((new Date(g.expires_at) - Date.now()) / 864e5))} days left, then the group is deleted)</span></div></div>
   <div class="lobby">
     <div class="col">
       <section class="panel">
         <h2>🔗 Invite link</h2>
         <div class="copy-row"><input readonly value="${esc(invite)}"><button class="btn primary" data-action="copy" data-text="${esc(invite)}">Copy</button></div>
         <p class="muted">Paste it in Discord. Anyone with the link can join while signups are open.</p>
-        ${host ? `<details class="hostlink" ${hostKey ? 'open' : ''}><summary>👑 Your host link <span class="muted">(keep secret)</span></summary>
+        ${host ? `<div class="pwrow">🔑 Group password: ${joinPw ? `<code>${esc(joinPw)}</code>` : '<span class="muted">none — anyone with the link can join</span>'}
+            <button class="btn small" data-action="change-pw">${joinPw ? 'Change' : 'Set one'}</button></div>
+          <div class="row" style="margin-top:10px"><button class="btn" data-action="copy-invite">📋 Copy invite message for Discord</button></div>
+          <details class="hostlink"><summary>👑 Your host link <span class="muted">(keep secret)</span></summary>
           ${hostKey ? `<div class="copy-row"><input readonly value="${esc(invite)}/host/${esc(hostKey)}"><button class="btn" data-action="copy" data-text="${esc(invite)}/host/${esc(hostKey)}">Copy</button></div>
-          <p class="muted">Open this on any other device to manage the group from there. Don’t share it — it makes whoever opens it the host.</p>`
-          : '<button class="btn small" data-action="show-hostlink">Show host link</button>'}</details>` : ''}
+          <p class="muted">Open this on any other device to manage the group from there. Don’t share it — whoever opens it becomes the host.</p>` : ''}</details>`
+          : (g.has_password ? '<p class="muted">🔑 New players also need the group password — ask the host.</p>' : '')}
       </section>
       <section class="panel">
         <h2>👥 Players <span class="count">${players.length}</span></h2>
         <ul class="plist">${players.map(p => `<li>
           <span class="st" title="${p.has_gift ? 'Gift added' : 'No gift yet'}">${p.has_gift ? '🎁' : '⏳'}</span>
-          <span class="nm">${esc(p.name)}${p.id === me ? ' <span class="badge">you</span>' : ''}${!p.joined ? ' <span class="muted">· added by host</span>' : ''}</span>
+          <span class="nm">${esc(p.name)}${p.id === me ? ' <span class="badge">you</span>' : ''}${!p.joined ? ' <span class="muted">· not connected yet</span>' : ''}</span>
+          ${host && p.id !== me ? `<button class="icon-btn" data-action="release-player" data-id="${p.id}" title="Personal rejoin link (they switched device)">🔄</button>` : ''}
           ${host || p.id === me ? `<button class="icon-btn" data-action="remove-player" data-id="${p.id}" title="${p.id === me ? 'Leave group' : 'Remove'}">✕</button>` : ''}
         </li>`).join('') || '<li class="muted">Nobody yet — share the invite link!</li>'}</ul>
         ${host ? `<form data-form="add-player" class="row" style="margin-top:10px"><input name="pname" data-keep maxlength="40" placeholder="Add someone who can't use the link" style="flex:1"><button class="btn">Add</button></form>` : ''}
-        <p class="muted">🎁 gift added · ⏳ still needs one</p>
+        <p class="muted">🎁 gift added · ⏳ still needs one${host ? ' · 🔄 makes a personal rejoin link if someone switches device' : ''}</p>
       </section>
     </div>
     <div class="col">
@@ -335,10 +420,14 @@ function renderLobby() {
       </section>
       ${host ? `<section class="panel">
         <h2>👑 Host controls</h2>
+        <label>📅 Event date &amp; time <span class="muted">(shown to everyone, in their own time zone)</span>
+          <span class="row"><input type="datetime-local" name="evt" data-keep value="${toLocalInput(g.event_at)}" style="flex:1;width:auto">
+          <button class="btn" data-action="save-event">Save</button>${g.event_at ? '<button class="btn ghost" data-action="clear-event">Clear</button>' : ''}</span></label>
         <label class="toggle"><input type="checkbox" data-setting="signups" ${g.signups_open ? 'checked' : ''}> Signups open</label>
-        <label class="inline-num">Max steals per gift <input type="number" min="1" max="20" value="${s.maxSteals}" data-setting="maxSteals"></label>
+        <label class="inline-num">Max steals per gift <input type="number" name="maxSteals" data-keep min="1" max="20" value="${s.maxSteals}" data-setting="maxSteals"></label>
         <label class="toggle"><input type="checkbox" data-setting="noStealBack" ${s.noStealBack ? 'checked' : ''}> No immediate steal-backs</label>
         <label class="toggle"><input type="checkbox" data-setting="finalSwap" ${s.finalSwap ? 'checked' : ''}> First player gets a final swap</label>
+        <label class="toggle"><input type="checkbox" data-setting="noOwnGift" ${s.noOwnGift !== false ? 'checked' : ''}> Players can't pick or steal the gift they brought <span class="muted">(unless it's the last one left)</span></label>
         ${waiting.length ? `<p class="muted">Still waiting on gifts from: ${waiting.map(p => esc(p.name)).join(', ')}</p>` : ''}
         <div class="start-row">
           ${problems.length ? `<span class="warn">⚠ ${problems.join(' · ')}</span>` : ''}
@@ -382,6 +471,11 @@ function playCard(gid, mode, canAct) {
   if (mode === 'pile') { action = 'pick'; cta = 'Pick me!'; }
   else { action = final ? 'swap' : 'steal'; cta = final ? 'Swap!' : 'Steal!'; why = stealBlock(gid, st.active); }
   if (!canAct) why = why || 'Not your turn';
+  const brought = x && x.from && x.from === S.me;   // only ever known for your own gift
+  if (!why && brought && st.active === S.me && S.group.settings.noOwnGift !== false) {
+    const pileOthers = S.gifts.some(o => o.id !== gid && !st.holdings[o.id]);
+    if (mode !== 'pile' || pileOthers) why = "That's the gift you brought";
+  }
   const isMine = holder && holder === S.me;
   return `<button class="gift-card ${isMine ? 'mine' : ''}" data-action="${action}" data-id="${gid}" ${why ? 'disabled' : ''} title="${esc(why)}">
     <span class="cta">${cta}</span>
@@ -389,6 +483,7 @@ function playCard(gid, mode, canAct) {
     ${holder ? `<div class="owner">${esc(player(holder).name)}${isMine ? ' (you)' : ''}</div>
       <div class="pips" title="${steals}/${max} steals">${'●'.repeat(Math.min(steals, max))}${'○'.repeat(Math.max(0, max - steals))}</div>` : ''}
     ${steals >= max ? '<span class="lock" title="Locked">🔒</span>' : ''}
+    ${brought ? '<span class="brought" title="Only you can see this">you brought this</span>' : ''}
   </button>`;
 }
 function renderPlay() {
@@ -415,12 +510,13 @@ function renderPlay() {
         ${held.length ? `<div class="gift-grid">${held.map(id => playCard(id, 'held', canAct)).join('')}</div>` : '<div class="empty">Nobody has a gift yet.</div>'}
         ${final && canAct ? `<div class="row" style="justify-content:center;margin-top:16px"><button class="btn primary big" data-action="keep">Keep ${isMe ? 'my' : 'their'} gift 👍</button></div>` : ''}
       </section>
+      ${trackerPanel()}
     </div>
     <aside>
       <section class="panel"><h2>Turn order</h2>
         <ol class="order">${st.order.map((pid, i) => {
           const cur = pid === active, done = !final && i < st.turn && !cur;
-          return `<li class="${cur ? 'cur' : ''} ${done ? 'done' : ''}"><span class="n">${i + 1}</span>${cur ? '▶ ' : ''}${esc(player(pid).name)}${pid === me ? ' <span class="badge">you</span>' : ''}${giftOf(pid) ? ' 🎁' : ''}</li>`;
+          return `<li class="${cur ? 'cur' : ''} ${done ? 'done' : ''}"><span class="n">${i + 1}</span>${cur ? '▶ ' : ''}${esc(player(pid).name)}${pid === me ? ' <span class="badge">you</span>' : ''}${giftOf(pid) ? ' 🎁' : ''}${host && pid !== me && player(pid).joined ? `<button class="icon-btn" style="margin-left:auto" data-action="release-player" data-id="${pid}" title="Personal rejoin link (they switched device)">🔄</button>` : ''}</li>`;
         }).join('')}</ol></section>
       ${host ? `<section class="panel"><h2>👑 Host</h2><div class="controls">
         <button class="btn small" data-action="undo" ${g.can_undo ? '' : 'disabled'}>↶ Undo</button>
@@ -429,6 +525,26 @@ function renderPlay() {
       <section class="panel"><h2>📜 Play-by-play</h2><ul class="log">${(st.log || []).slice(0, 40).map(l => `<li>${esc(l)}</li>`).join('')}</ul></section>
     </aside>
   </div>`);
+}
+
+/* ---- gift tracker: every gift and who has held it, in order ---- */
+function trackerPanel() {
+  const st = S.group.game, trail = st.trail || {}, rev = st.revealed || [], max = S.group.settings.maxSteals;
+  const rows = S.gifts.slice().sort((a, b) => (trail[b.id] ? 1 : 0) - (trail[a.id] ? 1 : 0)).map(x => {
+    const t = trail[x.id] || [], c = rev.includes(x.id) ? contents[x.id] : null, steals = st.steals[x.id] || 0;
+    const chain = t.length
+      ? t.map((pid, i) => `<span class="chip ${i === t.length - 1 ? 'now' : ''}">${esc(player(pid).name)}</span>`).join('<span class="arrow">→</span>')
+      : '<span class="muted">still under the tree</span>';
+    return `<div class="trk-row">
+      <div class="trk-gift">${presentSVG(x.wrap)}</div>
+      <div class="trk-body">
+        ${c ? `<div class="trk-item">${safeImg(c.img) ? `<img src="${esc(c.img)}" alt="">` : ''}<b>${esc(c.name)}</b>${c.from ? `<span class="muted">from ${esc(player(c.from).name)}</span>` : ''}</div>` : ''}
+        <div class="trk-chain">${chain}</div>
+      </div>
+      <div class="trk-steals">${steals ? `😈 ×${steals}` : ''}${steals >= max ? ' 🔒' : ''}</div>
+    </div>`;
+  }).join('');
+  return `<section class="panel tracker"><h2>🧭 Gift tracker <span class="muted">who has held each gift</span></h2>${rows}</section>`;
 }
 
 /* ---- reveal ---- */
@@ -450,6 +566,7 @@ function renderReveal() {
     <div class="row" style="justify-content:center;margin-top:14px">
       ${next && host ? `<button class="btn primary big" data-action="reveal" data-id="${next.gid}">Unwrap next${next.pid ? ` — ${esc(player(next.pid).name)}` : ''}</button>` : ''}
       ${host && g.can_undo && !rev.length ? '<button class="btn" data-action="undo">↶ Undo</button>' : ''}
+      ${!next ? '<button class="btn primary big" data-action="copy-results">📋 Copy results for Discord</button>' : ''}
       ${host && !next ? '<button class="btn" data-action="reset">Play again (back to lobby)</button>' : ''}
     </div>
   </div>
@@ -459,7 +576,8 @@ function renderReveal() {
       <div class="muted">${who}${c.from ? ` · from ${esc(player(c.from).name)}` : ''}</div></div>`;
     return `<button class="gift-card" data-action="reveal" data-id="${x.gid}" ${canOpen(x) ? '' : 'disabled'}>
       <span class="cta">Unwrap!</span>${presentSVG(gf && gf.wrap)}<div class="owner">${who}</div></button>`;
-  }).join('')}</div>`);
+  }).join('')}</div>
+  ${trackerPanel()}`);
 }
 function showRevealModal(gid) {
   const gf = giftById(gid), c = contents[gid];
@@ -485,7 +603,7 @@ async function openEditor(gid, forPlayer) {
   if (gid) {
     let c = contents[gid];
     if (!c) { try { c = contents[gid] = await rpc('get_gift', { p_gift: gid }); } catch (e) { return fail(e); } }
-    draft = { id: gid, name: c.name, note: c.note, img: c.img, from: c.from || '', wrap: JSON.parse(JSON.stringify(giftById(gid).wrap)), _new: false };
+    draft = { id: gid, name: c.name, note: c.note, img: c.img, from: c.from || '', wrap: cleanWrap(giftById(gid).wrap), _new: false };
   } else {
     draft = { id: null, name: '', note: '', img: '', from: forPlayer || '', wrap: randomWrap(`#${S.gifts.length + 1}`), _new: true };
   }
@@ -496,7 +614,7 @@ function swatches(field, value) {
     <input type="color" data-wrap="${field}" value="${value}" title="Custom color"></div>`;
 }
 function renderEditor() {
-  const w = draft.wrap, isUrl = draft.img && !draft.img.startsWith('data:'), host = S.group.is_host;
+  const w = draft.wrap = cleanWrap(draft.wrap), isUrl = draft.img && !draft.img.startsWith('data:'), host = S.group.is_host;
   const forSelf = draft.from && draft.from === S.me;
   $modal.innerHTML = `<div class="modal-card">
     <header><h2>${draft._new ? (forSelf || !host ? '🎁 Add your gift' : '🎁 Add a gift') : '✏️ Edit gift'}</h2><button class="icon-btn" data-action="close-modal" title="Close">✕</button></header>
@@ -545,7 +663,6 @@ function closeModal() { $modal.classList.remove('show'); $modal.innerHTML = ''; 
 const actions = {
   'forget-group': d => { myGroups.remove(d.id); renderHome(); },
   'copy': d => navigator.clipboard.writeText(d.text).then(() => toast('Copied! 📋'), () => toast('Copy failed — select the text and copy it manually', true)),
-  'show-hostlink': () => act(async () => { hostKey = await rpc('get_host_key', { p_group: groupId }); }).then(() => { const det = $app.querySelector('.hostlink'); if (det) det.open = true; }),
   'remove-player': d => {
     const self = d.id === S.me;
     if (!confirm(self ? 'Leave this group? Your gift will be removed too.' : `Remove ${player(d.id).name}? Their gift will be removed too.`)) return;
@@ -580,6 +697,41 @@ const actions = {
     if (!confirm('Delete this group, all players and all gifts? This cannot be undone.')) return;
     act(async () => { await rpc('delete_group', { p_group: groupId }); myGroups.remove(groupId); location.hash = '#/'; });
   },
+  'save-event': () => {
+    const el = $app.querySelector('[name=evt]'), d = el && el.value ? new Date(el.value) : null;
+    if (!d || isNaN(d)) return toast('Pick a date and time first', true);
+    act(async () => { await rpc('set_event', { p_group: groupId, p_event: d.toISOString() }); toast('Event date saved 📅'); });
+  },
+  'clear-event': () => act(async () => { await rpc('set_event', { p_group: groupId, p_event: null }); const el = $app.querySelector('[name=evt]'); if (el) el.value = ''; }),
+  'change-pw': () => {
+    const next = prompt('Group password friends need to join (4–40 characters).\nLeave blank for no password.', joinPw || '');
+    if (next === null) return;
+    act(async () => { await rpc('set_group_password', { p_group: groupId, p_password: next.trim() }); joinPw = next.trim(); toast(next.trim() ? 'Password updated 🔑' : 'Password removed'); });
+  },
+  'copy-invite': () => {
+    const g = S.group;
+    actions.copy({ text: [`🐘 You're invited to **${g.name}** — a White Elephant gift exchange!`,
+      g.event_at ? `📅 ${fmtDate(g.event_at, true)}` : '',
+      `🔗 Join and add your gift: ${inviteURL(g.code)}`,
+      joinPw ? `🔑 Password: ${joinPw}` : ''].filter(Boolean).join('\n') });
+  },
+  'copy-results': () => {
+    const lines = revealList().map(x => {
+      const c = contents[x.gid] || {};
+      return `• ${x.pid ? player(x.pid).name : 'Unclaimed'} → ${c.name || '?'}${c.from ? ` (from ${player(c.from).name})` : ''}`;
+    });
+    actions.copy({ text: `🐘 ${S.group.name} — results\n${lines.join('\n')}` });
+  },
+  'release-player': d => {
+    const name = player(d.id).name;
+    if (!confirm(`Make a personal rejoin link for ${name}?\n\nUse this if they switched device or browser and can't get back in. Their old device is signed out of the group, and you get a one-time link to send them privately.`)) return;
+    act(async () => {
+      const tok = await rpc('host_release_player', { p_player: d.id });
+      const link = `${inviteURL(S.group.code)}/rejoin/${tok}`;
+      try { await navigator.clipboard.writeText(link); } catch { }
+      prompt(`Send this one-time link to ${name} in a private message (it's also on your clipboard). Whoever opens it takes ${name}'s seat.`, link);
+    });
+  },
   'toggle-big': () => { bigScreen = !bigScreen; localStorage.setItem('we.big', bigScreen ? '1' : '0'); render(); },
 };
 
@@ -595,13 +747,13 @@ document.addEventListener('submit', e => {
   const v = name => (f.elements[name]?.value || '').trim();
   if (kind === 'create') {
     act(async () => {
-      const r = await rpc('create_group', { p_name: v('gname'), p_host_name: v('hname') || null });
+      const r = await rpc('create_group', { p_name: v('gname'), p_host_name: v('hname') || null, p_password: v('pw') || null });
       myGroups.add({ id: r.id, code: r.code, name: v('gname'), host: true });
       hostKey = r.host_key;
       f.reset(); location.hash = `#/g/${r.code}`;
     });
   } else if (kind === 'join') {
-    act(async () => { await rpc('join_group', { p_code: f.dataset.code, p_name: v('name') }); f.reset(); route(); });
+    act(async () => { await rpc('join_group', { p_code: f.dataset.code, p_name: v('name'), p_password: f.elements.pw ? f.elements.pw.value.trim() : null }); f.reset(); await route(); });
   } else if (kind === 'add-player') {
     act(async () => { await rpc('host_add_player', { p_group: groupId, p_name: v('pname') }); f.reset(); })
       .then(() => $app.querySelector('[name=pname]')?.focus());

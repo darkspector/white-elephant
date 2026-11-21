@@ -1,0 +1,27 @@
+# Supabase pauses free projects after about 7 days without activity.
+# This pings the database twice a week so it stays awake through the holiday season,
+# and clears out expired groups while it is there.
+#
+# It stops pinging after Dec 31, 2026. For next season:
+#   1. Log in at supabase.com and restore (unpause) the project.
+#   2. Change KEEPALIVE_UNTIL below to the new end date.
+name: Keep Supabase awake
+on:
+  schedule:
+    - cron: '17 9 * * 1,4'
+  workflow_dispatch:
+env:
+  KEEPALIVE_UNTIL: '20261231'
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping database
+        run: |
+          if [ "$(date -u +%Y%m%d)" -gt "$KEEPALIVE_UNTIL" ]; then
+            echo "Past $KEEPALIVE_UNTIL: keep-alive is off for the season. See the notes at the top of this file."
+            exit 0
+          fi
+          curl -fsS -X POST "https://wbmufyzuottxpsekuoox.supabase.co/rest/v1/rpc/ping" \
+            -H "apikey: sb_publishable_AvgqlbqdjM8z_wveKNk4TA_tKcs_iHg" \
+            -H "Content-Type: application/json" -d '{}'

@@ -28,3 +28,4 @@ begin
     insert into players (group_id, user_id, name) values (gid, auth.uid(), trim(p_host_name));
   end if;
   return jsonb_build_object('id', gid, 'code', c, 'host_key', k);
+end $$;

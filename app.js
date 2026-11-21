@@ -244,6 +244,9 @@ async function refresh(force) {
   await ensureContents();
   if (changed || force) render();
   handleEvent(S.group.game && S.group.game.event);
+  const guidedNow = !!(S.group.game && S.group.game.guided);
+  if (wasGuided && !guidedNow && !S.group.is_host && document.getElementById('stage')) closeModal();
+  wasGuided = guidedNow;
 }
 function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); }
 function subscribe() {
@@ -425,7 +428,7 @@ function renderHelp() {
       <h3>4. The reveal</h3>
       ${shot('player-reveal', 'A present being unwrapped, as every player sees it')}
       <ul>
-        <li>Usually the host unwraps everything one present at a time. You watch each one open, the pop-up closes by itself after a few seconds, and the next one appears when the host moves on.</li>
+        <li>Usually the host unwraps everything one present at a time. Each present stays on your screen until the host moves on to the next one, and the last one closes when the host is done.</li>
         <li>If the host leaves it to the players instead, tap your own present to unwrap it. Either way everyone sees the animation at the same moment.</li>
         <li>At the end you can see who got what and who brought it, and copy the results.</li>
       </ul>
@@ -719,15 +722,17 @@ function renderReveal() {
   }).join('')}</div>
   ${trackerPanel()}`);
 }
-let revealCloseTimer = null;
+let wasGuided = false;   // players: when the host finishes a guided reveal, their pop-up closes too
 function revealModalFooter(gid) {
   const st = S.group.game, rev = st.revealed || [];
   const next = revealList().find(x => x.gid !== gid && !rev.includes(x.gid));
   if (!st.guided) return '<button class="btn primary next-btn" data-action="close-modal">Nice! 🎉</button>';
-  if (!next) return '<button class="btn primary next-btn" data-action="close-modal">That’s all of them! 🎉</button>';
+  const follow = t => `<div class="next-btn wait-note">⏳ ${t} <button class="link-btn" data-action="close-modal">close</button></div>`;
+  if (!next) return S.group.is_host ? '<button class="btn primary next-btn" data-action="finish-reveal">That’s all of them! 🎉</button>'
+    : follow('That’s the last one! This closes when the host is done.');
   if (S.group.is_host) return `<div class="next-btn"><button class="btn primary big" data-action="reveal" data-id="${next.gid}">Next present ▶${next.pid ? ` — ${esc(player(next.pid).name)}` : ''}</button>
     <div class="wait-note">Everyone is waiting for you to press Next.</div></div>`;
-  return '<div class="next-btn wait-note">⏳ The host will unwrap the next present soon. This closes by itself. <button class="btn small" data-action="close-modal">Close now</button></div>';
+  return follow('Waiting for the host to unwrap the next present…');
 }
 function showRevealModal(gid) {
   const gf = giftById(gid), c = contents[gid];
@@ -746,8 +751,6 @@ function showRevealModal(gid) {
   const stage = document.getElementById('stage');
   setTimeout(() => stage.classList.add('shake'), 80);
   setTimeout(() => { stage.classList.add('open'); confetti(); }, 950);
-  clearTimeout(revealCloseTimer);   // players: the window closes by itself; the host keeps it (it holds the Next button)
-  if (!S.group.is_host) revealCloseTimer = setTimeout(() => { if (document.getElementById('stage') === stage) closeModal(); }, 8000);
 }
 
 /* ---------------- gift editor ---------------- */
@@ -850,6 +853,7 @@ const actions = {
     await rpc('set_guided_reveal', { p_group: groupId, p_on: true });
     if (next) await rpc('game_action', { p_group: groupId, p_action: 'reveal', p_gift: next.gid });
   }),
+  'finish-reveal': () => { closeModal(); rpc('set_guided_reveal', { p_group: groupId, p_on: false }).then(() => refresh(true)).catch(() => { }); },
   'reveal': d => act(() => rpc('game_action', { p_group: groupId, p_action: 'reveal', p_gift: d.id })),
   'delete-group': () => {
     if (!confirm(`End "${S.group.name}" now?

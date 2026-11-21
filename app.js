@@ -382,7 +382,7 @@ function renderHelp() {
       <h3>4. Run the game</h3>
       ${shot('host-play', 'The host view during play, with the gift tracker and the host panel')}
       <ul>
-        <li>The banner shows whose turn it is. You can click for any player, which helps if someone is away or having trouble.</li>
+        <li>The banner shows whose turn it is. You can click for any player, which helps if someone is away or having trouble. When it is not your own turn, a gold notice and the button labels ("Pick for Alice") make clear you are acting for someone else.</li>
         <li><b>Undo</b> takes back the last move. <b>Skip to reveal</b> ends play early. <b>Back to lobby</b> resets the game and keeps the players and gifts.</li>
         <li><b>📺 Big screen</b> enlarges the board for sharing your screen on Discord.</li>
         <li>The <b>gift tracker</b> shows every hand each present has passed through.</li>
@@ -598,8 +598,9 @@ function playCard(gid, mode, canAct) {
   const st = S.group.game, x = giftById(gid), holder = st.holdings[gid];
   const steals = st.steals[gid] || 0, max = S.group.settings.maxSteals, final = S.group.phase === 'final';
   let action, why = '', cta;
-  if (mode === 'pile') { action = 'pick'; cta = 'Pick me!'; }
-  else { action = final ? 'swap' : 'steal'; cta = final ? 'Swap!' : 'Steal!'; why = stealBlock(gid, st.active); }
+  const forName = S.group.is_host && st.active && st.active !== S.me ? player(st.active).name : null;   // host acting for someone else
+  if (mode === 'pile') { action = 'pick'; cta = forName ? `Pick for ${esc(forName)}` : 'Pick me!'; }
+  else { action = final ? 'swap' : 'steal'; cta = forName ? `${final ? 'Swap' : 'Steal'} for ${esc(forName)}` : final ? 'Swap!' : 'Steal!'; why = stealBlock(gid, st.active); }
   if (!canAct) why = why || 'Not your turn';
   const brought = x && x.from && x.from === S.me;   // only ever known for your own gift
   if (!why && brought && st.active === S.me && S.group.settings.noOwnGift !== false) {
@@ -628,17 +629,19 @@ function renderPlay() {
   if (final) { who = isMe ? '🏁 Final swap — <em>your call!</em>' : `🏁 Final round: <em>${name}</em>`; sub = 'Swap with any unlocked gift, or keep yours.'; }
   else if (chain) { who = isMe ? '😱 <em>You</em> got robbed!' : `😱 <em>${name}</em> got robbed!`; sub = 'Pick a new gift from the pile or steal another.'; }
   else { who = isMe ? '🎯 <em>You’re</em> up!' : `<em>${name}</em> is up`; sub = `Turn ${st.turn + 1} of ${st.order.length} — pick from the pile${held.length ? ' or steal' : ''}.`; }
-  if (!isMe) sub += host ? ' <span class="host-note">(host: you can click for them)</span>' : ` Waiting for ${name}…`;
+  const proxy = host && !isMe;
+  if (!isMe && !host) sub += ` Waiting for ${name}…`;
 
   paint(`
-  <div class="banner"><p class="who">${who}</p><div class="sub">${sub}</div></div>
-  <div class="play">
+  <div class="banner"><p class="who">${who}</p><div class="sub">${sub}</div>
+    ${proxy ? `<div class="proxy-note">👑 <b>${me ? 'This is not your turn.' : 'You are hosting, not playing.'}</b> Anything you click now is done <b>for ${name}</b>. Only do it if they can’t click themselves.</div>` : ''}</div>
+  <div class="play${proxy ? ' proxy' : ''}">
     <div>
       ${final ? '' : `<section class="panel"><h2>🎄 Under the tree <span class="count">${pile.length}</span></h2>
         ${pile.length ? `<div class="gift-grid">${pile.map(id => playCard(id, 'pile', canAct)).join('')}</div>` : '<div class="empty">The pile is empty.</div>'}</section>`}
       <section class="panel"><h2>🙌 Claimed (still wrapped) <span class="count">${held.length}</span></h2>
         ${held.length ? `<div class="gift-grid">${held.map(id => playCard(id, 'held', canAct)).join('')}</div>` : '<div class="empty">Nobody has a gift yet.</div>'}
-        ${final && canAct ? `<div class="row" style="justify-content:center;margin-top:16px"><button class="btn primary big" data-action="keep">Keep ${isMe ? 'my' : 'their'} gift 👍</button></div>` : ''}
+        ${final && canAct ? `<div class="row" style="justify-content:center;margin-top:16px"><button class="btn primary big" data-action="keep">${isMe ? 'Keep my gift' : `Keep ${name}’s gift for them`} 👍</button></div>` : ''}
       </section>
       ${trackerPanel()}
     </div>

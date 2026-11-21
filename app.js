@@ -390,7 +390,8 @@ function renderHelp() {
       <h3>5. The reveal and afterwards</h3>
       ${shot('host-results', 'The results after everything is unwrapped')}
       <ul>
-        <li>Press "Unwrap next" to go in order, or tap any present. Players can also unwrap their own.</li>
+        <li>Press "🎁 Unwrap all, one at a time". The first present opens on everyone's screen, and each time you press "Next present ▶" the next one opens. Players wait for you and can't unwrap anything themselves.</li>
+        <li>If you would rather let people open their own, skip that button. You can tap any single present, and each player can tap theirs.</li>
         <li>When everything is open, "Copy results for Discord" gives you a list of who got what.</li>
         <li>"Play again" returns to the lobby. "End group now" deletes the group for everyone and frees its slot. It can't be undone.</li>
       </ul>
@@ -424,7 +425,8 @@ function renderHelp() {
       <h3>4. The reveal</h3>
       ${shot('player-reveal', 'A present being unwrapped, as every player sees it')}
       <ul>
-        <li>Tap your present to unwrap it, or the host unwraps for you. Everyone sees the animation at the same moment.</li>
+        <li>Usually the host unwraps everything one present at a time. You watch each one open and wait for the host to move on to the next.</li>
+        <li>If the host leaves it to the players instead, tap your own present to unwrap it. Either way everyone sees the animation at the same moment.</li>
         <li>At the end you can see who got what and who brought it, and copy the results.</li>
       </ul>
     </section>
@@ -691,14 +693,17 @@ function revealList() {
 function renderReveal() {
   const g = S.group, st = g.game, host = g.is_host, rev = st.revealed || [];
   const list = revealList(), next = list.find(x => !rev.includes(x.gid));
-  const canOpen = x => host || (x.pid && x.pid === S.me);
+  const guided = !!st.guided;   // host is unwrapping everything one at a time; players wait
+  const canOpen = x => host || (!guided && x.pid && x.pid === S.me);
   const myNext = list.find(x => !rev.includes(x.gid) && x.pid === S.me);
   paint(`
   <div class="banner">
     <p class="who">${next ? '🎁 The big <em>reveal</em>!' : '🎉 All <em>revealed</em>!'}</p>
-    <div class="sub">${next ? (host ? 'Unwrap in order, or tap any present.' : myNext ? 'Tap your present to unwrap it when it’s your turn!' : 'Watch the gifts get unwrapped…') : 'Happy holidays, everyone!'}</div>
+    <div class="sub">${next ? (host ? (guided ? 'Press “Next present” to unwrap them one at a time. Everyone is waiting for you.' : 'Press “Unwrap all” to open them one at a time for everyone, or tap any single present.')
+      : guided ? 'The host is unwrapping the presents one at a time. Sit back and watch…' : myNext ? 'Tap your present to unwrap it when it’s your turn!' : 'Watch the gifts get unwrapped…') : 'Happy holidays, everyone!'}</div>
     <div class="row" style="justify-content:center;margin-top:14px">
-      ${next && host ? `<button class="btn primary big" data-action="reveal" data-id="${next.gid}">Unwrap next${next.pid ? ` — ${esc(player(next.pid).name)}` : ''}</button>` : ''}
+      ${next && host ? (guided ? `<button class="btn primary big" data-action="reveal" data-id="${next.gid}">Next present ▶${next.pid ? ` — ${esc(player(next.pid).name)}` : ''}</button>`
+        : '<button class="btn primary big" data-action="unwrap-all">🎁 Unwrap all, one at a time</button>') : ''}
       ${host && g.can_undo && !rev.length ? '<button class="btn" data-action="undo">↶ Undo</button>' : ''}
       ${!next ? '<button class="btn primary big" data-action="copy-results">📋 Copy results for Discord</button>' : ''}
       ${host && !next ? '<button class="btn" data-action="reset">Play again (back to lobby)</button>' : ''}
@@ -714,6 +719,15 @@ function renderReveal() {
   }).join('')}</div>
   ${trackerPanel()}`);
 }
+function revealModalFooter(gid) {
+  const st = S.group.game, rev = st.revealed || [];
+  const next = revealList().find(x => x.gid !== gid && !rev.includes(x.gid));
+  if (!st.guided) return '<button class="btn primary next-btn" data-action="close-modal">Nice! 🎉</button>';
+  if (!next) return '<button class="btn primary next-btn" data-action="close-modal">That’s all of them! 🎉</button>';
+  if (S.group.is_host) return `<div class="next-btn"><button class="btn primary big" data-action="reveal" data-id="${next.gid}">Next present ▶${next.pid ? ` — ${esc(player(next.pid).name)}` : ''}</button>
+    <div class="wait-note">Everyone is waiting for you to press Next.</div></div>`;
+  return '<div class="next-btn wait-note">⏳ Waiting for the host to unwrap the next present… <button class="btn small" data-action="close-modal">Close</button></div>';
+}
 function showRevealModal(gid) {
   const gf = giftById(gid), c = contents[gid];
   if (!gf || !c) return;
@@ -725,7 +739,7 @@ function showRevealModal(gid) {
       <div class="reveal-box">${presentSVG(gf.wrap)}</div>
       <div class="reveal-item">${itemImg(c)}<h2>${esc(c.name)}</h2>${c.note ? `<p>${esc(c.note)}</p>` : ''}${c.from ? `<p class="muted">from ${esc(player(c.from).name)}</p>` : ''}</div>
     </div>
-    <button class="btn primary next-btn" data-action="close-modal">Nice! 🎉</button>
+    ${revealModalFooter(gid)}
   </div>`;
   $modal.classList.add('show');
   const stage = document.getElementById('stage');
@@ -828,6 +842,11 @@ const actions = {
   'undo': () => act(() => rpc('game_action', { p_group: groupId, p_action: 'undo' })),
   'end': () => { if (confirm('End the game now and go straight to the reveal?')) act(() => rpc('game_action', { p_group: groupId, p_action: 'end' })); },
   'reset': () => { if (confirm('Go back to the lobby? The current game is wiped (players and gifts stay).')) act(() => rpc('reset_game', { p_group: groupId })); },
+  'unwrap-all': () => act(async () => {
+    const rev = S.group.game.revealed || [], next = revealList().find(x => !rev.includes(x.gid));
+    await rpc('set_guided_reveal', { p_group: groupId, p_on: true });
+    if (next) await rpc('game_action', { p_group: groupId, p_action: 'reveal', p_gift: next.gid });
+  }),
   'reveal': d => act(() => rpc('game_action', { p_group: groupId, p_action: 'reveal', p_gift: d.id })),
   'delete-group': () => {
     if (!confirm(`End "${S.group.name}" now?

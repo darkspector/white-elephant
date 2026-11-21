@@ -300,3 +300,4 @@ input[type=datetime-local], input[type=password] { width: 100%; padding: 9px 11p
 .trk-item img { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; }
 .trk-steals { color: var(--red); font-weight: 700; white-space: nowrap; font-size: .9rem; }
 body.big .trk-chain .chip { font-size: 1.05rem; }
+.reveal-grid { margin-bottom: 18px; }

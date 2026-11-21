@@ -365,7 +365,7 @@ function renderHelp() {
       <ul>
         <li><b>Gold "HOST VIEW" bar.</b> It appears at the top of every screen while you are the host. Players never see it.</li>
         <li><b>Invite link.</b> Copy it, or use "Copy invite message for Discord", which writes the invitation for you.</li>
-        <li><b>Your host link.</b> Under "👑 Your host link (keep secret)". Save it somewhere private. It makes any browser the host, so it is how you get back in from another device. Don't share it.</li>
+        <li><b>Your host link.</b> Under "👑 Your host link (keep secret)". Save it somewhere private, or press "✉️ Email it to myself" to open a ready-made message in your own email app. It makes any browser the host, so it is how you get back in from another device. Don't share it.</li>
         <li><b>Players list.</b> 🎁 means a gift is added, ⏳ means still waiting. Use ✕ to remove someone, and 🔄 to make a personal rejoin link for a player who switched device.</li>
         <li><b>Add a gift for someone</b> who can't add their own. You can see the contents of gifts you entered yourself.</li>
         <li><b>Event date.</b> Set it and press Save. Everyone sees it in their own time zone.</li>
@@ -490,6 +490,12 @@ function renderJoin(info) {
   </section></div>`);
 }
 
+function hostMailto(g, invite) {
+  const body = [`Host link for "${g.name}" (keep this private, whoever opens it becomes the host):`, `${invite}/host/${hostKey}`, '',
+    'Invite link to share with players:', invite, ...(joinPw ? [`Group password: ${joinPw}`] : []), '',
+    `The group is deleted automatically on ${fmtDate(g.expires_at)}.`].join(String.fromCharCode(13, 10));
+  return `mailto:?subject=${encodeURIComponent(`White Elephant host link: ${g.name}`)}&body=${encodeURIComponent(body)}`;
+}
 function inviteURL(code) { return `${location.origin}${location.pathname}#/g/${code}`; }
 
 function renderLobby() {
@@ -518,6 +524,8 @@ function renderLobby() {
           <div class="row" style="margin-top:10px"><button class="btn" data-action="copy-invite">📋 Copy invite message for Discord</button></div>
           <details class="hostlink"><summary>👑 Your host link <span class="muted">(keep secret)</span></summary>
           ${hostKey ? `<div class="copy-row"><input readonly value="${esc(invite)}/host/${esc(hostKey)}"><button class="btn" data-action="copy" data-text="${esc(invite)}/host/${esc(hostKey)}">Copy</button></div>
+          <div class="row" style="margin-top:8px"><a class="btn small" href="${esc(hostMailto(g, invite))}">✉️ Email it to myself</a>
+          <span class="muted">opens your own email app with the link filled in</span></div>
           <p class="muted">Open this on any other device to manage the group from there. Don’t share it — whoever opens it becomes the host.</p>` : ''}</details>`
           : (g.has_password ? '<p class="muted">🔑 New players also need the group password — ask the host.</p>' : '')}
       </section>

@@ -343,3 +343,9 @@ div.next-btn { display: flex; flex-direction: column; align-items: center; gap: 
 div.next-btn.wait-note { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 10px; }
 
 .link-btn { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: .82rem; }
+
+/* Presents opened after round 1 */
+.gift-card .opened { width: 100%; }
+.gift-card .opened img, .gift-card .opened .no-img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; display: block; }
+.gift-card .opened .item { font-weight: 700; font-size: .9rem; margin-top: 6px; line-height: 1.2; }
+.gift-card.is-open .cta { top: 14px; }

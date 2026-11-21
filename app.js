@@ -247,6 +247,9 @@ async function refresh(force) {
   const guidedNow = !!(S.group.game && S.group.game.guided);
   if (wasGuided && !guidedNow && !S.group.is_host && document.getElementById('stage')) closeModal();
   wasGuided = guidedNow;
+  const openedNow = !!(S.group.game && S.group.game.opened);
+  if (wasOpened === false && openedNow) { toast('🎉 Every present is unwrapped! Swap knowing what’s inside.'); confetti(); }
+  wasOpened = openedNow;
 }
 function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); }
 function subscribe() {
@@ -259,12 +262,13 @@ function subscribe() {
 }
 function leaveGroup() {
   if (channel) sb.removeChannel(channel);
-  channel = null; clearInterval(pollTimer); groupId = null; S = null; lastSeq = null; lastPaintKey = ''; hostKey = null; joinPw = null; lastActive = null;
+  channel = null; clearInterval(pollTimer); groupId = null; S = null; wasOpened = null; lastSeq = null; lastPaintKey = ''; hostKey = null; joinPw = null; lastActive = null;
   document.title = 'White Elephant 🐘';
   closeModal();
 }
 async function ensureContents() {
-  const g = S.group, rev = g.phase === 'reveal' ? (g.game && g.game.revealed) || [] : [];
+  const g = S.group, rev = (g.game && g.game.revealed) || [];
+  for (const x of S.gifts) if (!x.mine && !rev.includes(x.id)) delete contents[x.id];   // e.g. after an undo
   const need = S.gifts.filter(x => (x.mine || rev.includes(x.id)) && !contents[x.id]);
   await Promise.all(need.map(async x => { try { contents[x.id] = await rpc('get_gift', { p_gift: x.id }); } catch { } }));
 }
@@ -378,6 +382,7 @@ function renderHelp() {
         <li><b>Signups open.</b> Turn it off to stop new people joining.</li>
         <li><b>Max steals per gift.</b> After that many steals a present is locked 🔒 to its holder.</li>
         <li><b>Rounds.</b> How many times play goes around the group (1 to 5). Round 1 is the normal pick-or-steal. In each extra round every player, in the same order, may swap with any unlocked present or keep theirs.</li>
+        <li><b>Unwrap all presents after round 1.</b> As soon as everyone has a present, they all open at once, and the swap turns that follow are played knowing what each one is. It only matters if there are swap turns: 2 or more rounds, or the final swap.</li>
         <li><b>No immediate steal-backs.</b> A player who was just robbed can't take the same present straight back.</li>
         <li><b>First player gets a final swap.</b> Whoever went first gets one last swap at the end, since they had nothing to steal on their turn.</li>
         <li><b>Players can't pick or steal the gift they brought,</b> unless it is the last one left.</li>
@@ -423,7 +428,7 @@ function renderHelp() {
         <li><b>Pick</b> a present from "Under the tree", or <b>steal</b> one from "Claimed". Presents stay wrapped the whole game, so you are choosing by the wrapping.</li>
         <li>If someone steals yours, you go again straight away: pick from the pile or steal a different one.</li>
         <li>A present you can't take is greyed out with the reason, such as locked 🔒 after too many steals, or it is the one you brought.</li>
-        <li>If the host set more than one round, play goes around again after everyone has a present. On those turns you swap yours with any unlocked present, or keep it.</li>
+        <li>If the host set more than one round, play goes around again after everyone has a present. On those turns you swap yours with any unlocked present, or keep it. The host can choose to have every present unwrapped before those turns, so you can see what you are swapping for.</li>
         <li>If the host allows it, the first player gets a final swap at the end.</li>
         <li>When it is not your turn there is nothing to do but watch. Your screen updates by itself.</li>
       </ul>
@@ -563,6 +568,7 @@ function renderLobby() {
         <label class="inline-num">Max steals per gift <input type="number" name="maxSteals" data-keep min="1" max="20" value="${s.maxSteals}" data-setting="maxSteals"></label>
         <label class="inline-num">Rounds <input type="number" name="rounds" data-keep min="1" max="5" value="${s.rounds || 1}" data-setting="rounds">
           <span class="muted">times around the group. After round 1, each turn is swap-or-keep.</span></label>
+        <label class="toggle"><input type="checkbox" data-setting="openAfterFirst" ${s.openAfterFirst ? 'checked' : ''}> Unwrap all presents after round 1 <span class="muted">(the swap turns are then played knowing what's inside; needs 2+ rounds or the final swap)</span></label>
         <label class="toggle"><input type="checkbox" data-setting="noStealBack" ${s.noStealBack ? 'checked' : ''}> No immediate steal-backs</label>
         <label class="toggle"><input type="checkbox" data-setting="finalSwap" ${s.finalSwap ? 'checked' : ''}> First player gets a final swap</label>
         <label class="toggle"><input type="checkbox" data-setting="noOwnGift" ${s.noOwnGift !== false ? 'checked' : ''}> Players can't pick or steal the gift they brought <span class="muted">(unless it's the last one left)</span></label>
@@ -617,9 +623,10 @@ function playCard(gid, mode, canAct) {
     if (mode !== 'pile' || pileOthers) why = "That's the gift you brought";
   }
   const isMine = holder && holder === S.me;
-  return `<button class="gift-card ${isMine ? 'mine' : ''}" data-action="${action}" data-id="${gid}" ${why ? 'disabled' : ''} title="${esc(why)}">
+  const open = (st.revealed || []).includes(gid) ? contents[gid] : null;
+  return `<button class="gift-card ${isMine ? 'mine' : ''} ${open ? 'is-open' : ''}" data-action="${action}" data-id="${gid}" ${why ? 'disabled' : ''} title="${esc(why)}">
     <span class="cta">${cta}</span>
-    ${presentSVG(x && x.wrap)}
+    ${open ? `<div class="opened">${itemImg(open)}<div class="item">${esc(open.name)}</div></div>` : presentSVG(x && x.wrap)}
     ${holder ? `<div class="owner">${esc(player(holder).name)}${isMine ? ' (you)' : ''}</div>
       <div class="pips" title="${steals}/${max} steals">${'●'.repeat(Math.min(steals, max))}${'○'.repeat(Math.max(0, max - steals))}</div>` : ''}
     ${steals >= max ? '<span class="lock" title="Locked">🔒</span>' : ''}
@@ -655,7 +662,7 @@ function renderPlay() {
     <div>
       ${final ? '' : `<section class="panel"><h2>🎄 Under the tree <span class="count">${pile.length}</span></h2>
         ${pile.length ? `<div class="gift-grid">${pile.map(id => playCard(id, 'pile', canAct)).join('')}</div>` : '<div class="empty">The pile is empty.</div>'}</section>`}
-      <section class="panel"><h2>🙌 Claimed (still wrapped) <span class="count">${held.length}</span></h2>
+      <section class="panel"><h2>🙌 Claimed ${st.opened ? '(unwrapped)' : '(still wrapped)'} <span class="count">${held.length}</span></h2>
         ${held.length ? `<div class="gift-grid">${held.map(id => playCard(id, 'held', canAct)).join('')}</div>` : '<div class="empty">Nobody has a gift yet.</div>'}
         ${final && canAct ? `<div class="row" style="justify-content:center;margin-top:16px"><button class="btn primary big" data-action="keep">${isMe ? 'Keep my gift' : `Keep ${name}’s gift for them`} 👍</button></div>` : ''}
       </section>
@@ -733,6 +740,7 @@ function renderReveal() {
   }).join('')}</div>
   ${trackerPanel()}`);
 }
+let wasOpened = null;     // null until the first load of a group, so reloading mid-game doesn't re-announce
 let wasGuided = false;   // players: when the host finishes a guided reveal, their pop-up closes too
 function revealModalFooter(gid) {
   const st = S.group.game, rev = st.revealed || [];

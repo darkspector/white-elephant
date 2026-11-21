@@ -301,3 +301,5 @@ input[type=datetime-local], input[type=password] { width: 100%; padding: 9px 11p
 .trk-steals { color: var(--red); font-weight: 700; white-space: nowrap; font-size: .9rem; }
 body.big .trk-chain .chip { font-size: 1.05rem; }
 .reveal-grid { margin-bottom: 18px; }
+.end-row { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.end-row .muted { flex: 1; min-width: 200px; }

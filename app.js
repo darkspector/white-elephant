@@ -220,7 +220,11 @@ async function refresh(force) {
   let next;
   try { next = await rpc('get_state', { p_group: groupId }); }
   catch (e) {
-    if (/not in this group|not found/i.test(e.message)) { myGroups.remove(groupId); toast(e.message, true); location.hash = '#/'; }
+    if (/not in this group|not found/i.test(e.message)) {
+      myGroups.remove(groupId);
+      toast(/not found/i.test(e.message) ? 'This group has ended — the host closed it or it expired.' : e.message, true);
+      location.hash = '#/';
+    }
     else console.warn(e);
     return;
   }
@@ -433,7 +437,8 @@ function renderLobby() {
           ${problems.length ? `<span class="warn">⚠ ${problems.join(' · ')}</span>` : ''}
           <button class="btn primary big" data-action="start" ${problems.length ? 'disabled' : ''}>Start the game 🎉</button>
         </div>
-        <details class="danger-zone"><summary>Danger zone</summary><button class="btn small danger" data-action="delete-group">Delete this group</button></details>
+        <div class="end-row"><button class="btn small danger" data-action="delete-group">End group now</button>
+          <span class="muted">Deletes the group for everyone and frees up its slot. Otherwise it ends by itself on ${esc(fmtDate(g.expires_at))}.</span></div>
       </section>` : `<section class="panel waiting">⏳ Waiting for the host to start the game…</section>`}
     </div>
   </div>`);
@@ -521,7 +526,8 @@ function renderPlay() {
       ${host ? `<section class="panel"><h2>👑 Host</h2><div class="controls">
         <button class="btn small" data-action="undo" ${g.can_undo ? '' : 'disabled'}>↶ Undo</button>
         <button class="btn small" data-action="end">Skip to reveal</button>
-        <button class="btn small danger" data-action="reset">Back to lobby</button></div></section>` : ''}
+        <button class="btn small danger" data-action="reset">Back to lobby</button>
+        <button class="btn small danger" data-action="delete-group">End group now</button></div></section>` : ''}
       <section class="panel"><h2>📜 Play-by-play</h2><ul class="log">${(st.log || []).slice(0, 40).map(l => `<li>${esc(l)}</li>`).join('')}</ul></section>
     </aside>
   </div>`);
@@ -568,6 +574,7 @@ function renderReveal() {
       ${host && g.can_undo && !rev.length ? '<button class="btn" data-action="undo">↶ Undo</button>' : ''}
       ${!next ? '<button class="btn primary big" data-action="copy-results">📋 Copy results for Discord</button>' : ''}
       ${host && !next ? '<button class="btn" data-action="reset">Play again (back to lobby)</button>' : ''}
+      ${host ? '<button class="btn danger" data-action="delete-group">End group now</button>' : ''}
     </div>
   </div>
   <div class="reveal-grid">${list.map(x => {
@@ -694,8 +701,10 @@ const actions = {
   'reset': () => { if (confirm('Go back to the lobby? The current game is wiped (players and gifts stay).')) act(() => rpc('reset_game', { p_group: groupId })); },
   'reveal': d => act(() => rpc('game_action', { p_group: groupId, p_action: 'reveal', p_gift: d.id })),
   'delete-group': () => {
-    if (!confirm('Delete this group, all players and all gifts? This cannot be undone.')) return;
-    act(async () => { await rpc('delete_group', { p_group: groupId }); myGroups.remove(groupId); location.hash = '#/'; });
+    if (!confirm(`End "${S.group.name}" now?
+
+This deletes the group, its players, gifts and results for everyone, and frees up the slot. It cannot be undone.`)) return;
+    act(async () => { await rpc('delete_group', { p_group: groupId }); myGroups.remove(groupId); toast('Group ended'); location.hash = '#/'; });
   },
   'save-event': () => {
     const el = $app.querySelector('[name=evt]'), d = el && el.value ? new Date(el.value) : null;

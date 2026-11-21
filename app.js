@@ -7,6 +7,7 @@ const PALETTE = ['#c0392b', '#e74c3c', '#ff6fa8', '#e67e22', '#f1c40f', '#1e8449
 const PATTERNS = [['plain', 'Plain'], ['stripes', 'Stripes'], ['dots', 'Dots'], ['zigzag', 'Zigzag'],
   ['stars', 'Stars'], ['plaid', 'Plaid'], ['checks', 'Checks'], ['snow', 'Snow']];
 const BOWS = [['classic', 'Classic'], ['pompom', 'Pom-pom'], ['star', 'Star'], ['none', 'None']];
+const ELEPHANT = '<span class="ele" role="img" aria-label="elephant in a Santa hat">🐘<svg class="santa-hat" viewBox="0 0 100 80" aria-hidden="true"><path d="M12 62C28 30 54 6 88 20C74 26 66 42 70 62Z" fill="#d42a2a"/><path d="M40 34C52 22 66 16 80 18" stroke="#a01818" stroke-width="3" fill="none" opacity=".5"/><rect x="6" y="54" width="72" height="17" rx="8.5" fill="#fff"/><circle cx="88" cy="22" r="10" fill="#fff"/></svg></span>';
 const TOPPERS = ['', '🎄', '⭐', '❄️', '🎅', '🦌', '🔔', '🍬', '☃️', '🐘', '❤️', '🍪', '🎉', '❓'];
 
 const $app = document.getElementById('app');
@@ -352,7 +353,7 @@ function renderJoin(info) {
   setSteps(null);
   const closed = info.phase !== 'lobby' || !info.signups_open;
   paint(`<div class="home"><section class="panel hero">
-    <h2>🐘 You're invited to <span class="hl">${esc(info.name)}</span></h2>
+    <h2>${ELEPHANT} You're invited to <span class="hl">${esc(info.name)}</span></h2>
     ${info.event_at ? `<p>📅 <b>${esc(fmtDate(info.event_at, true))}</b></p>` : ''}
     ${closed ? `<p class="warn-box">${info.phase !== 'lobby' ? 'This game has already started.' : 'Signups are closed.'}
       If the host already added you, enter the exact same name to claim your spot.</p>`

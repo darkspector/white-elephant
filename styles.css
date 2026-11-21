@@ -303,3 +303,7 @@ body.big .trk-chain .chip { font-size: 1.05rem; }
 .reveal-grid { margin-bottom: 18px; }
 .end-row { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .end-row .muted { flex: 1; min-width: 200px; }
+
+/* Santa hat on the elephant */
+.ele { position: relative; display: inline-block; }
+.santa-hat { position: absolute; width: .66em; left: -.02em; top: -.04em; transform: rotate(-14deg); pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }

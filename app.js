@@ -295,7 +295,7 @@ function setSteps(phase) {
   const rb = document.getElementById('rolebar');
   rb.hidden = !isHost;
   rb.innerHTML = isHost ? '<b>👑 HOST VIEW</b><span>You are running this group. Players don’t see the host controls.</span>' : '';
-  const steps = [['lobby', 'Lobby'], ['play', 'Play'], ['final', 'Final round'], ['reveal', 'Reveal']];
+  const steps = [['lobby', 'Lobby'], ['play', 'Play'], ['final', S && (S.group.settings.rounds || 1) > 1 ? 'Swap rounds' : 'Final round'], ['reveal', 'Reveal']];
   document.getElementById('steps').innerHTML = phase
     ? steps.map(([k, l]) => `<span class="${phase === k ? 'on' : ''}">${l}</span>`).join('') +
       (phase !== 'lobby' ? `<button class="screen-btn" data-action="toggle-big" title="Bigger board for screen sharing">📺 ${bigScreen ? 'Normal view' : 'Big screen'}</button>` : '')
@@ -377,6 +377,7 @@ function renderHelp() {
       <ul>
         <li><b>Signups open.</b> Turn it off to stop new people joining.</li>
         <li><b>Max steals per gift.</b> After that many steals a present is locked 🔒 to its holder.</li>
+        <li><b>Rounds.</b> How many times play goes around the group (1 to 5). Round 1 is the normal pick-or-steal. In each extra round every player, in the same order, may swap with any unlocked present or keep theirs.</li>
         <li><b>No immediate steal-backs.</b> A player who was just robbed can't take the same present straight back.</li>
         <li><b>First player gets a final swap.</b> Whoever went first gets one last swap at the end, since they had nothing to steal on their turn.</li>
         <li><b>Players can't pick or steal the gift they brought,</b> unless it is the last one left.</li>
@@ -422,6 +423,7 @@ function renderHelp() {
         <li><b>Pick</b> a present from "Under the tree", or <b>steal</b> one from "Claimed". Presents stay wrapped the whole game, so you are choosing by the wrapping.</li>
         <li>If someone steals yours, you go again straight away: pick from the pile or steal a different one.</li>
         <li>A present you can't take is greyed out with the reason, such as locked 🔒 after too many steals, or it is the one you brought.</li>
+        <li>If the host set more than one round, play goes around again after everyone has a present. On those turns you swap yours with any unlocked present, or keep it.</li>
         <li>If the host allows it, the first player gets a final swap at the end.</li>
         <li>When it is not your turn there is nothing to do but watch. Your screen updates by itself.</li>
       </ul>
@@ -559,6 +561,8 @@ function renderLobby() {
           <button class="btn" data-action="save-event">Save</button>${g.event_at ? '<button class="btn ghost" data-action="clear-event">Clear</button>' : ''}</span></label>
         <label class="toggle"><input type="checkbox" data-setting="signups" ${g.signups_open ? 'checked' : ''}> Signups open</label>
         <label class="inline-num">Max steals per gift <input type="number" name="maxSteals" data-keep min="1" max="20" value="${s.maxSteals}" data-setting="maxSteals"></label>
+        <label class="inline-num">Rounds <input type="number" name="rounds" data-keep min="1" max="5" value="${s.rounds || 1}" data-setting="rounds">
+          <span class="muted">times around the group. After round 1, each turn is swap-or-keep.</span></label>
         <label class="toggle"><input type="checkbox" data-setting="noStealBack" ${s.noStealBack ? 'checked' : ''}> No immediate steal-backs</label>
         <label class="toggle"><input type="checkbox" data-setting="finalSwap" ${s.finalSwap ? 'checked' : ''}> First player gets a final swap</label>
         <label class="toggle"><input type="checkbox" data-setting="noOwnGift" ${s.noOwnGift !== false ? 'checked' : ''}> Players can't pick or steal the gift they brought <span class="muted">(unless it's the last one left)</span></label>
@@ -631,7 +635,14 @@ function renderPlay() {
   const pile = S.gifts.filter(x => !st.holdings[x.id]).map(x => x.id);
   const held = st.order.map(giftOf).filter(Boolean);
   let who, sub;
-  if (final) { who = isMe ? '🏁 Final swap — <em>your call!</em>' : `🏁 Final round: <em>${name}</em>`; sub = 'Swap with any unlocked gift, or keep yours.'; }
+  // swap-or-keep turns: extra rounds first (queue holds every turn), then the first player's final swap
+  const qi = st.qi || 0, nP = st.order.length, R = st.rounds || 1, inRound = final && qi < (R - 1) * nP;
+  if (inRound) {
+    const rn = 2 + Math.floor(qi / nP);
+    who = isMe ? `🔁 Round ${rn} of ${R} — <em>you’re</em> up!` : `🔁 Round ${rn} of ${R}: <em>${name}</em>`;
+    sub = `Turn ${qi % nP + 1} of ${nP} — swap with any unlocked gift, or keep yours.`;
+  }
+  else if (final) { who = isMe ? '🏁 Final swap — <em>your call!</em>' : `🏁 Final round: <em>${name}</em>`; sub = 'Swap with any unlocked gift, or keep yours.'; }
   else if (chain) { who = isMe ? '😱 <em>You</em> got robbed!' : `😱 <em>${name}</em> got robbed!`; sub = 'Pick a new gift from the pile or steal another.'; }
   else { who = isMe ? '🎯 <em>You’re</em> up!' : `<em>${name}</em> is up`; sub = `Turn ${st.turn + 1} of ${st.order.length} — pick from the pile${held.length ? ' or steal' : ''}.`; }
   const proxy = host && !isMe;
@@ -653,7 +664,7 @@ function renderPlay() {
     <aside>
       <section class="panel"><h2>Turn order</h2>
         <ol class="order">${st.order.map((pid, i) => {
-          const cur = pid === active, done = !final && i < st.turn && !cur;
+          const cur = pid === active, done = (inRound ? i < qi % nP : !final && i < st.turn) && !cur;
           return `<li class="${cur ? 'cur' : ''} ${done ? 'done' : ''}"><span class="n">${i + 1}</span>${cur ? '▶ ' : ''}${esc(player(pid).name)}${pid === me ? ' <span class="badge">you</span>' : ''}${giftOf(pid) ? ' 🎁' : ''}${host && pid !== me && player(pid).joined ? `<button class="icon-btn" style="margin-left:auto" data-action="release-player" data-id="${pid}" title="Personal rejoin link (they switched device)">🔄</button>` : ''}</li>`;
         }).join('')}</ol></section>
       ${host ? `<section class="panel"><h2>👑 Host</h2><div class="controls">
@@ -935,7 +946,7 @@ document.addEventListener('change', async e => {
   if (el.dataset.setting && S) {
     const k = el.dataset.setting, s = { ...S.group.settings };
     if (k === 'signups') return act(() => rpc('update_group', { p_group: groupId, p_signups: el.checked }));
-    s[k] = el.type === 'checkbox' ? el.checked : Math.max(1, Math.min(20, parseInt(el.value, 10) || 1));
+    s[k] = el.type === 'checkbox' ? el.checked : Math.max(1, Math.min(+el.max || 20, parseInt(el.value, 10) || 1));
     return act(() => rpc('update_group', { p_group: groupId, p_settings: s }));
   }
   if (el.dataset.file === 'img' && el.files[0] && draft) {

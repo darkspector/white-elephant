@@ -1,6 +1,6 @@
-// Supabase connection. The publishable/anon key is meant to be public — access is
-// controlled by the database functions and row-level security in supabase/schema.sql.
+// Supabase connection. The publishable key is meant to be public — access is
+// controlled by the database functions and row-level security in supabase/migrations.
 window.WE_CONFIG = {
-  url: '',   // e.g. https://abcd1234.supabase.co
-  key: '',   // publishable (sb_publishable_…) or legacy anon key
+  url: 'https://wbmufyzuottxpsekuoox.supabase.co',
+  key: 'sb_publishable_AvgqlbqdjM8z_wveKNk4TA_tKcs_iHg',
 };

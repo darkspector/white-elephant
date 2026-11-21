@@ -4,17 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>White Elephant 🐘</title>
+  <meta name="description" content="You're invited to a White Elephant gift exchange. Add your gift, wrap it your way, and get ready to steal.">
+  <meta property="og:title" content="🐘 White Elephant gift exchange">
+  <meta property="og:description" content="You're invited! Add your gift, wrap it your way, and get ready to steal.">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#c0392b">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎁</text></svg>">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>🐘 White Elephant</h1>
+    <h1><a href="#/">🐘 White Elephant</a></h1>
     <nav id="steps"></nav>
   </header>
-  <main id="app"></main>
+  <main id="app"><div class="loading">Loading…</div></main>
   <div id="modal" class="modal" aria-modal="true" role="dialog"></div>
   <div id="toast" class="toast"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

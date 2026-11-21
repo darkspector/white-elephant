@@ -428,7 +428,7 @@ function renderHelp() {
       <h3>4. The reveal</h3>
       ${shot('player-reveal', 'A present being unwrapped, as every player sees it')}
       <ul>
-        <li>Usually the host unwraps everything one present at a time. Each present stays on your screen until the host moves on to the next one, and the last one closes when the host is done.</li>
+        <li>Usually the host unwraps everything one present at a time. Each present stays on your screen until the host moves on to the next one, and you close the last one yourself.</li>
         <li>If the host leaves it to the players instead, tap your own present to unwrap it. Either way everyone sees the animation at the same moment.</li>
         <li>At the end you can see who got what and who brought it, and copy the results.</li>
       </ul>
@@ -729,7 +729,7 @@ function revealModalFooter(gid) {
   if (!st.guided) return '<button class="btn primary next-btn" data-action="close-modal">Nice! 🎉</button>';
   const follow = t => `<div class="next-btn wait-note">⏳ ${t} <button class="link-btn" data-action="close-modal">close</button></div>`;
   if (!next) return S.group.is_host ? '<button class="btn primary next-btn" data-action="finish-reveal">That’s all of them! 🎉</button>'
-    : follow('That’s the last one! This closes when the host is done.');
+    : '<div class="next-btn"><div class="wait-note">That’s the last one!</div><button class="btn primary" data-action="close-modal">Close 🎉</button></div>';
   if (S.group.is_host) return `<div class="next-btn"><button class="btn primary big" data-action="reveal" data-id="${next.gid}">Next present ▶${next.pid ? ` — ${esc(player(next.pid).name)}` : ''}</button>
     <div class="wait-note">Everyone is waiting for you to press Next.</div></div>`;
   return follow('Waiting for the host to unwrap the next present…');
